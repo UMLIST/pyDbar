@@ -1,62 +1,101 @@
 # pyDbar for Electrical Impedance Tomography
 
-Thank you for the interest in pyDbar! This package implements the Dbar method for Electrical impedance tomography and follows up on the pyEIT presented in https://github.com/liubenyuan/pyEIT. 
+This is a fork of the [original `pydbar`](https://github.com/NablaIP/pydbar) implementation by NablaIP. The main updates are as follows:
+- Modernize: the last commit in the original repo was made in 2021, so some of the code had to be updated to follow modern conventions.
+- Documentation: remove unnecessary components from `readme` and clarify documentation.
 
-## 1. Overview
-The D-bar method can be used for Electrical Impedance Tomography in a 2D framework. This method is based on the theoretical reconstruction procedure of Nachman and a regularizing strategy that was established by Siltanen and provides a natural framework for numerical implementation There is an implementation in Matlab available at https://wiki.helsinki.fi/display/mathstatHenkilokunta/EIT+with+the+D-bar+method%3A+discontinuous+heart-and-lungs+phantom.
+## Related work
+- [pyEIT](https://github.com/liubenyuan/pyEIT): Python-based toolkit for EIT
+- [Matlab implementation of d-bar method](https://wiki.helsinki.fi/display/mathstatHenkilokunta/EIT+with+the+D-bar+method%3A+discontinuous+heart-and-lungs+phantom)
 
-For now we will keep things simple and a proper documentation will follow.
+## Overview
+The D-bar method can be used for Electrical Impedance Tomography in a 2D framework. This method is based on the theoretical reconstruction procedure of Nachman and a regularizing strategy that was established by Siltanen and provides a natural framework for numerical implementation
 
-## 2. Instalation
+## Algorithm Review
+Here we explain the main steps of the Dbar algorithm with either direct numerical implementation or with theoretical motivation. We assume that the system we use applies current and measures voltages along a (finite) set of electrodes.
 
-To install this package it is enough to use pip:
-                      
-                      pip install py-dbar.
- 
- Moreover, dependencies are handled by pip.                    
-                      
-## 3. To start off:
+### Neumann-to-Dirichlet (ND) Map
+Let $L$ be the number of electrodes and let $\mathbf{j}^k \in \R^L$ denote the $k$<sup>th</sup> **current pattern** vector such that $\mathbf{j}^k = \begin{bmatrix}j^k_1 & \ldots & j^k_L\end{bmatrix}^\intercal$. By Kirchoff's current law (KCL),
+$$
+    \sum_{\ell=1}^L j^k_\ell = 0,
+$$
+so the set of valid current patterns live in an $L-1$-dimensional linear subspace of $\R^L$. That is, we can apply at most $L-1$ linearly independent current patterns since the $L$<sup>th</sup> value would be linearly dependent in order to satisfy KCL. Then 
+$$
+    k \in \{1, 2, \ldots, N \leq L-1\}.
+$$
 
-Test cases are present in the tests folder. Soon, there will be a presentation here of the output.
-
-## 4. Algorithm Review
-
-Here we explain the main steps of the Dbar algorithm with either direct numerical implementation or with theoretical motivation.
-
-### Dirichlet-to-Neumann map
-
-The first step in EIT is to apply currents on a finite set of electrodes around the boundary and measure the corresponding voltages obtained thereafter. Let **L** be the number of electrodes, then we can apply at most **L-1** linearly independent current patterns (by current pattern we designate a vector of lenght **L** that describes the values of current applied in the electrodes). We designate by **C<sup>n</sup>** the n-th current pattern. There are a few choices that can be considered for current patterns, but for now we fix our focus in two. For **n=1,..., L-1** we have:
+There are a few choices that can be considered for current patterns, but for now we focus on three:
 - Adjacent current patterns: 
-<p align="center">
-<img src="https://latex.codecogs.com/png.latex?%5Cbg_white%5Chspace%7B3cm%7D%20C%5En_l%20%3D%20%5Cleft%5C%7B%5Cbegin%7Bmatrix%7D%20M%2C%5Cquad%20%5C%2C%20n%3Dl%20%5C%5C%20-M%2C%20%5C%3B%20n%3Dl&plus;1%20%5C%5C%20%5Cquad%5C%3B0%2C%20%5C%3B%20%5Ctext%7B%20otherwise%20%7D%20%5Cend%7Bmatrix%7D%5Cright." /> </p>
+$$
+    j_\ell^k =
+    \begin{cases}
+        M,\ k = \ell \\
+        -M,\ k = \ell + 1 \\
+        0,\ \text{otherwise}
+    \end{cases},
+    \qquad M \in \R^+
+$$
 
-- Trignometric current patterns: 
-<p align="center">
-<img src="https://latex.codecogs.com/png.latex?%5Cbg_white%5C%2CC%5En_l%20%3D%20%5Cleft%5C%7B%5Cbegin%7Bmatrix%7D%20M%5C%2C%5Ctext%7Bcos%7D%5Cleft%28n%5Ctheta_l%5Cright%29%2C%5Cquad%5Cquad%5Cquad%20%5C%2C%20n%3D1%2C...%2C%5Cfrac%7BL%7D%7B2%7D%20%5C%5C%20%5C%5C%20%5Cquad%20M%5C%2C%5Ctext%7Bsin%7D%5Cleft%28%5Cleft%28n-L/2%5Cright%29%5Ctheta_l%5Cright%29%2C%20%5Cquad%20n%3D%5Cfrac%7BL%7D%7B2%7D&plus;1%2C%20...%2C%20L-1%20%5Cend%7Bmatrix%7D%5Cright." /> </p>
+- Trigonometric current patterns: 
+$$
+    j_\ell^k = M
+    \begin{cases}
+        \cos(k \theta_\ell),\ k = 1, \ldots, \frac{L}{2}\\
+        \sin((k - \frac{L}{2})\theta_\ell),\ k = \frac{L}{2} + 1, \ldots, L-1
+    \end{cases},
+    \qquad M \in \R^+
+$$
 
-The corresponding voltages are denoted by **V<sup>n</sup>** and each of them is a vector of dimension **L** (corresponding to the set of electrodes). One of the required assumptions is that for each current pattern the sum of the measured voltages equals zero.
-We assume that an EIT device provides the data in this manner. 
+- Rotated trigonometric patterns (optimal by [Demidenko et al.](https://ieeexplore.ieee.org/document/1386561))
+$$
+    j_\ell^k = M
+    \begin{cases}
+        \cos(k \theta_\ell),\ k = 1, \ldots, \frac{L}{2} - 1 \\
+        Q \cos(k \theta_\ell),\ k = \frac{L}{2} \\
+        \sin((k - \frac{L}{2})\theta_\ell),\ k = \frac{L}{2} + 1, \ldots, L-1
+    \end{cases},
+$$
+where $\theta_0$ is some offset such that $\theta_0 L \neq \pm \pi$,
+$$
+    \theta_\ell = \theta_0 + \frac{2\pi\ell}{L},
+    \qquad
+    M = \sqrt{2 \over L},
+    \qquad \text{and} \qquad
+    Q = \frac{1}{\sqrt{2} \cos(\theta_0 \frac{L}{2})}.
+$$
 
-For our algorithm we create a mapping from this data: Dirichlet-to-Neumman map, which establishes a relation between the Dirichlet boundary conditions (voltages) and the Neumann boundary conditions (currents) in conductivity model. 
+For each current pattern $\mathbf{j}^k$, we obtain a voltage pattern $\mathbf{v}^k \in \R^L$. Since the resultant voltages are only determined up to an additive constant, for mathematical convenience, we enforce that $\sum_\ell v_\ell^k = 0$. This follows common practice in EIT. In this repo, we assume that an EIT device provides the data in this manner. 
 
-**How to obtain the Dirichlet-to-Neumann map (DtoN map)?**
+To numerically obtain the ND map, we perform the following:
+1. Normalize measurements:
+$$
+\mathbf{c}^k = \frac{\mathbf{j}^k}{\|\mathbf{j}^k\|_2}
+\qquad \text{and} \qquad
+\mathbf{u}^k = \frac{\mathbf{v}^k}{\|\mathbf{j}^k\|_2},
+$$
+where $\mathbf{c}^k$ and $\mathbf{u}^k$ are normalized currents and voltages we use moving forward.
 
-1. Normalize the measurements:
+2. Define the discrete approximation of the ND map $\Lambda_\sigma \approx \mathbf{R}_\sigma \in \R^{N \times N}$ such that
+$$
+\begin{align*}
+    \mathbf{R}_\sigma(m, n) &= \langle \frac{\mathbf{c}^m}{A_\ell}, \mathbf{u}^n \rangle_L \\
+                            &= \sum_{\ell = 1}^{L} \frac{\overline{c^m_\ell}}{A_\ell} \cdot u^n_\ell,
+\end{align*}
+$$
+where $1 \leq m, n \leq N$ and $A_\ell$ is the area of the $\ell$<sup>th</sup> electrode. Most likely, $\forall \ell,\ A_\ell = A$, so we can simplify the above to
+$$
+\begin{align*}
+    \mathbf{R}_\sigma(m, n) &= \frac{1}{A} \sum_{\ell = 1}^{L} \overline{c^m_\ell} \cdot u^n_\ell \\
+                            &= \frac{1}{A}\langle \mathbf{c}^m, \mathbf{u}^n \rangle.
+\end{align*}
+$$
 
-     **c<sup>n</sup>= C<sup>n</sup>/||C<sup>n</sup>||<sub>2</sub>** and **v<sup>n</sup>= V<sup>n</sup>/||C<sup>n</sup>||<sub>2</sub>**
-     
-2. Define the Neumann-to-Dirichlet map (inverse of DtoN map), which is a L-1 x L-1 matrix:
-
-<p align="center">
-<img src="https://latex.codecogs.com/png.latex?%5Cbg_white%5C%2CR_%7B%5Cgamma%7D%28i%2C%20j%29%20%3D%20%28t%5Ei%2C%20v%5Ej%29_L%20%3D%20%5Csum_%7Bl%3D1%7D%5E%7BL%7D%20t%5Ei_lv%5Ej_l" /> </p>
-
-3. Compute the matrix approximation of Dirichlet-to-Neumann map for electrodes of Area **A** and a body of radius **r**:
-
-<p align="center">
-<img src="https://latex.codecogs.com/png.latex?%5Cdpi%7B120%7D%20%5Cbg_white%20%5C%5C%20%5C%2CL_%7B%5Cgamma%7D%20%3D%20%5Cfrac%7BA%7D%7Br%7D%20%5Cleft%28R_%7B%5Cgamma%7D%20%5Cright%20%29%5E%7B-1%7D%20%5C%5C" /> </p>
-
-
-This mapping is the matrix approximation of the continuum operator for a body with conductivity &gamma;.
+### Dirichlet-to-Neumann (DN) Map
+Having obtained our ND map approximation $\mathbf{R}_\sigma$, we simply invert it to obtain the approximation to the Dirichlet-to-Neumann map:
+$$
+    \mathbf{L}_\sigma = \mathbf{R}_\sigma^{-1}.
+$$
+The relationship above is mathematically guaranteed. Additionally, $\mathbf{R}_\sigma$ is guaranteed to be non-singular (and thus invertible). We won't get into both guarantees here.
 
 Furthermore, the Dbar algorthm requires either the DtoN map of a body with the same geometry but with conductivity 1 or a reference DtoN map that corresponds to the same body with a different physiology (e.g. expiration and inspiration). This last case is designated by **tdEIT** and is very useful when monitoring health conditions that change with time like air ventilation in the lungs. With this in mind, the ***read_data class*** was constructed to compute one DtoN map from one set of current patterns and corresponding measured voltages. 
 
@@ -101,7 +140,7 @@ Afterwards, we can determine the conductivity by:
  
  By substituting the scattering transform by its approximations and solving the equation with respect to it we obtain respective approximations to the conductivity.
  
- ## 5. Numerical Implementation
+ ## Numerical Implementation
  
  Above, we present an immediate numerical implementation of the Dirichlet-to-Neumann map that trivially translates to code and a theoretical implementation of the regularization strategy for the D-bar and corresponding determination of the conductivity. Accordingly, we present the numerical implementation for both versions of the scattering transform and the solution to the Dbar equation.
  
@@ -196,7 +235,7 @@ To compute the scattering transform we need to solve the last system of equation
   
   This is what we need for implementation and it provides a framework for the code we present in this package. A description of each class and function and its role is presented next.
  
- ## 6. Documentation:
+ ## Documentation:
 
 Here, we provide an overview of each class and examples of usage. Our package possesses three classes:
 
@@ -433,7 +472,7 @@ Definition of the grid discretization of the **k-plane** with respect to the par
     Plot the obtained conductivity on the respective Z grid.  
 
 
-## 6. Bibliography:
+## Bibliography:
 
 [1] Mueller, J. L., & Siltanen, S. (2020). The d-bar method for electrical impedance tomography—demystified. Inverse problems, 36(9), 093001.
 
@@ -442,6 +481,3 @@ Definition of the grid discretization of the **k-plane** with respect to the par
 [3] Vainikko, G. (2000). Fast solvers of the Lippmann-Schwinger equation. In Direct and inverse problems of mathematical physics (pp. 423-440). Springer, Boston, MA.
 
 [4] Knudsen, K., Mueller, J., & Siltanen, S. (2004). Numerical solution method for the dbar-equation in the plane. Journal of Computational Physics, 198(2), 500-517.
-
-
-
