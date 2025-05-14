@@ -1,5 +1,6 @@
 import numpy as np
 from numpy import linalg
+from math import isclose
 
 from numpy.typing import NDArray
 
@@ -55,7 +56,20 @@ class Map:
         self._compute_DN()
 
     
+    def _zero_mean_voltages(self):
+        """
+        Center voltage patterns st. sum(v) == 0 (with tolerance)
+        """
+        for k in range(self.N):
+            v = self.v_mx[:, k]
+
+            if not isclose(np.sum(v), 0):
+                self.v_mx[:, k] = v - np.mean(v)
+
+    
     def _compute_ND(self):
+        self._zero_mean_voltages()
+
         if not self.ortho:
             # Use QR decomp to obtain orthonormal current matrix (Q)
             self.c_mx, R = linalg.qr(self.j_mx)
