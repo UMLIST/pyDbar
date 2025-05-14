@@ -98,9 +98,12 @@ class Mapper:
 
 
 if __name__ == "__main__":
+    # Simple test
     current = np.genfromtxt("../tests/EIT_Data/Current.txt", delimiter=" ").transpose()
-    voltage = np.genfromtxt("../tests/EIT_Data/Voltage.txt", delimiter=" ").transpose()
+    voltage = np.genfromtxt("../tests/EIT_Data/Voltage_1.txt", delimiter=" ").transpose()
+
+    print(f"Current and voltage data from {current.shape[0]} electrodes, with {current.shape[1]} patterns.")
 
     mapper = Mapper(current, voltage)
-    print(mapper.DN)
-    print(mapper.ND)
+    print("DN is a matrix with shape", mapper.DN.shape)
+    print("ND is a matrix with shape", mapper.ND.shape)
