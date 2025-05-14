@@ -64,18 +64,32 @@ $$
     Q = \frac{1}{\sqrt{2} \cos(\theta_0 \frac{L}{2})}.
 $$
 
-For each current pattern $\mathbf{j}^k$, we obtain a voltage pattern $\mathbf{v}^k \in \R^L$. Since the resultant voltages are only determined up to an additive constant, for mathematical convenience, we enforce that $\sum_\ell v_\ell^k = 0$. This follows common practice in EIT. In this repo, we assume that an EIT device provides the data in this manner. 
+For each current pattern $\mathbf{j}^k$, we obtain a voltage pattern $\mathbf{v}^k \in \R^L$. Since the resultant voltages are only determined up to an additive constant, for mathematical convenience, we enforce that $\sum_\ell v_\ell^k = 0$. This follows common practice in EIT. In our implementation, we don't expect the incoming data to have such property, so we enforce is when needed, in the `Mapper` object.
 
-To numerically obtain the ND map, we perform the following:
-1. Normalize measurements:
+To numerically obtain the ND map, `Mapper` performs the following:
+#### 1. Zero-mean the voltages:
+Compute sample mean
+$$
+    \mu^k = \frac{1}{L}\sum_{\ell = 1}^L v^k_\ell.
+$$
+For each $\ell = 1,\ldots,N$,
+$$
+    \tilde{v}^k_\ell = v^k_\ell - \mu^k
+    \implies
+    \mathbf{\tilde{v}}^k = \begin{bmatrix}
+        \tilde{v}^k_1 & \ldots & \tilde{v}^k_L
+    \end{bmatrix}^\intercal
+$$
+
+#### 2. Normalize measurements:
 $$
 \mathbf{c}^k = \frac{\mathbf{j}^k}{\|\mathbf{j}^k\|_2}
 \qquad \text{and} \qquad
-\mathbf{u}^k = \frac{\mathbf{v}^k}{\|\mathbf{j}^k\|_2},
+\mathbf{u}^k = \frac{\mathbf{\tilde{v}}^k}{\|\mathbf{j}^k\|_2},
 $$
 where $\mathbf{c}^k$ and $\mathbf{u}^k$ are normalized currents and voltages we use moving forward.
 
-2. Define the discrete approximation of the ND map $\Lambda_\sigma \approx \mathbf{R}_\sigma \in \R^{N \times N}$ such that
+#### 3. Define the discrete approximation of the ND map $\Lambda_\sigma \approx \mathbf{R}_\sigma \in \R^{N \times N}$ such that
 $$
 \begin{align*}
     \mathbf{R}_\sigma(m, n) &= \langle \frac{\mathbf{c}^m}{A_\ell}, \mathbf{u}^n \rangle_L \\
