@@ -4,7 +4,7 @@ from math import isclose
 
 from numpy.typing import NDArray
 
-class Map:
+class Mapper:
     """
     This class generates DN and ND maps, contained in one Map object.
     Methods are private.
@@ -95,4 +95,6 @@ class Map:
 
     def _compute_DN(self):
         self.DN = linalg.inv(self.ND)
-                
+
+
+if __name__ == "__main__":
