@@ -4,90 +4,124 @@ import math
 
 pi = math.pi
 
-class scattering:
-    
-    def __init__(self, scat_type, k_grid, Now, Ref):
-        self.tK = np.zeros((k_grid.N, k_grid.N), dtype=complex)
-        
-        self.load_scattering(scat_type, k_grid, Now, Ref)
-        
-        
-    def load_scattering(self, scat_type, k_grid, Now, Ref):
-        
-        if scat_type=="partial":
-            self.partial_scattering(Now, Ref, k_grid)
-        elif scat_type=="exp":
-            self.exp_scattering(Now,Ref, k_grid)
-        else:
-            print("Does not exist or we need to implement that version!")
-            
-            
-        
-    def exp_scattering(self, Now, Ref, k_grid):
-        
-        dt = (2*pi)/Now.L
-        zt = np.exp(1j*np.arange(0, 2*pi, dt))
-        ind0 = 1e-7
-        
-        for j in range(k_grid.N):
-            for jj in range(k_grid.N):
-                
-                if( abs(k_grid.k[j, jj]) < k_grid.R and abs(k_grid.k[j, jj]) > ind0):
-                
-                    Ez = np.exp(1j*k_grid.k[j, jj]*zt)
-                    conj_Ez = np.exp(1j * k_grid.k[j, jj].conjugate() * np.conjugate(zt))
-                
-                    ck, residuals_c, rank_c, s_c = np.linalg.lstsq(Now.Current, Ez, rcond=None)
-                    dk, residuals_d, rank_d, s_d = np.linalg.lstsq(Now.Current, conj_Ez, rcond=None)
-                
-                    for l in range(Now.L-1):
-                        for ll in range(Now.L-1):
-                            self.tK[j, jj] = self.tK[j, jj] + (ck[l]*(Now.DNmap[ll, l]-Ref.DNmap[ll, l])*dk[ll])
+
+def f_coef(n, k):
+    """
+    Fourier coefficient defined as a_n(k) in "Reconstructions of Chest Phantoms"
+    """
+    return ((1j * k) ** n) / math.factorial(n)
 
 
-                    self.tK[j, jj] = self.tK[j, jj]/(4*pi*(k_grid.k[j, jj].conjugate()))    
-        
-    
-    
-    def partial_scattering(self, Now, Ref, k_grid):
-    
-        G0 = np.zeros((Now.L, Now.L), dtype=complex)
+def approx_scatter(L, body_radius, d_theta, electrode_area, delta_DN, k: complex):
+    # Note that m and n are summation indices that start at 1
+    # and go to L/2 - 1. We define m_idx, n_idx for matrix indices.
+
+    a_halfL_kbar = f_coef(L//2, k.conjugate())
+    a_halfL_k = f_coef(L//2, k)
+
+    second = complex(0, 0)
+    for n in range(1, int(L//2)):
+        n_idx = n - 1
+        a_n_k = f_coef(n, k)
+        second += a_halfL_kbar * a_n_k * (delta_DN[L//2, n_idx] + 1j * delta_DN[L//2, L//2 + n_idx])
+    second *= math.sqrt(2)
+
+    third = complex(0, 0)
+    for m in range(1, int(L//2)):
+        m_idx = m - 1
+        a_m_kbar = f_coef(m, k.conjugate())
+        third += a_m_kbar * a_halfL_k * (delta_DN[m_idx, L//2] - 1j * delta_DN[L//2 + m_idx, L//2])
+    third *= math.sqrt(2)
+
+    fourth = 2 * a_halfL_kbar * a_halfL_k * delta_DN[L//2, L//2]
+
+    t_exp = complex(0, 0)
+    for m in range(1, L//2):
+        m_idx = m - 1
+
+        a_m_kbar = f_coef(m, k.conjugate())
+
+        for n in range(1, L//2):
+            n_idx = n - 1
+            a_n_k = f_coef(n, k)
+            first_inside = (delta_DN[m_idx, n_idx] +
+                            delta_DN[L//2 + m_idx, L//2 + n_idx] +
+                            1j * (delta_DN[m_idx, L//2 + n_idx] - delta_DN[L//2 + m_idx, n_idx]))
+
+            t_exp += a_m_kbar * a_n_k * first_inside + second + third + fourth
+
+    t_exp *= (L * body_radius * d_theta) / electrode_area
+
+    return t_exp
 
 
-        dt = (2*pi)/Now.L
-        zt = np.exp(1j*np.arange(0, 2*pi, 2*pi/Now.L))
+if __name__ == "__main__":
+    from pyDbar.k_grid import generate_kgrid
+    from pyDbar.Mapper import Mapper, generate_base_DN
+    from pyDbar.Simulation import Simulation
+    from pyeit.mesh.wrapper import PyEITAnomaly_Circle
+    import matplotlib.pyplot as plt
 
-        for l in range(Now.L):
-            for ll in range(Now.L):
-                if l != ll:
-                    G0[l, ll] = -(1/(2*pi))*cmath.log( abs( zt[l] - zt[ll] ) )
+    L = 16
+    delta_theta = 2 * pi / L
+    electrode_area = 0.05
 
-        
+    anomaly = [PyEITAnomaly_Circle(center=[0.5, 0.], r=0.2, perm=1.5),
+               PyEITAnomaly_Circle(center=[-0.5, 0.], r=0.2, perm=0.5)]
 
-        dL = Now.DNmap - Ref.DNmap
-        Phi = np.matmul(Now.Current.transpose(), Now.Current)
-        PhidL = np.matmul(Now.Current, dL)
+    body = Simulation(L=L, anomaly=anomaly)
+    base = Simulation(L=L)
+    body.simulate()
+    base.simulate()
 
-        ind0 = 1e-7
+    body_map = Mapper(body.current,
+                      body.voltage,
+                      electrode_area=electrode_area)
 
-        M = Phi + np.matmul(Now.Current.transpose(),np.matmul(G0, PhidL))
+    base_map = Mapper(base.current,
+                      base.voltage,
+                      electrode_area=electrode_area)
 
-        for j in range(k_grid.N):
-            for jj in range(k_grid.N):
-                if( abs(k_grid.k[j ,jj]) < k_grid.R and abs(k_grid.k[j, jj]) > ind0):
+    body_DN = body_map.DN
+    base_DN = base_map.DN
+    # base_DN = generate_base_DN(L, electrode_area=electrode_area)
+    delta_DN = body_DN - base_DN
+    print(delta_DN.shape)
 
-                    Ez = np.exp(1j*k_grid.k[j, jj]*zt)
+    k_grid = generate_kgrid(32, -1, 1)
+    t_exp = np.zeros_like(k_grid)
+    for m in range(k_grid.shape[0]):
+        for n in range(k_grid.shape[1]):
+            k = k_grid[m, n]
+            if abs(k) <= 1:
+                t_exp[m, n] = approx_scatter(L=L,
+                                             body_radius=1,
+                                             d_theta=delta_theta,
+                                             electrode_area=0.1,
+                                             k=k,
+                                             delta_DN=delta_DN)
 
-                    psi_b, residuals, rank, s  = np.linalg.lstsq(M, np.matmul(Now.Current.transpose(),Ez), rcond=None)
+    x = np.real(k_grid)
+    y = np.imag(k_grid)
+    c1 = np.real(t_exp)
+    c2 = np.imag(t_exp)
 
+    # Create a mask where t_exp is zero
+    mask = np.abs(t_exp) == 0
 
-                    for l in range(Now.L):
-                        c = cmath.exp(1j*((k_grid.k[j, jj]*zt[l]).conjugate()))
-                        for ll in range(Now.L-1):
+    # Mask the data (keep 2D structure)
+    c1 = np.ma.masked_where(mask, c1)
+    c2 = np.ma.masked_where(mask, c2)
 
-                            self.tK[j, jj] = self.tK[j, jj] + c*PhidL[l, ll]*psi_b[ll]
+    fig, axs = plt.subplots(1, 2, figsize=(12, 6))
+    pcm1 = axs[0].pcolormesh(x, y, c1, shading='auto')
+    pcm2 = axs[1].pcolormesh(x, y, c2, shading='auto')
+    axs[0].set_aspect("equal")
+    axs[1].set_aspect("equal")
 
-                    self.tK[j, jj] = self.tK[j, jj]/(4*pi*(k_grid.k[j, jj].conjugate()))
-
-    
-            
+    axs[0].set_title("Scatter: Real Part")
+    axs[1].set_title("Scatter: Imaginary Part")
+    # fig.colorbar(pcm1, ax=axs[0])
+    # fig.colorbar(pcm2, ax=axs[1])
+    fig.tight_layout()
+    plt.show()
