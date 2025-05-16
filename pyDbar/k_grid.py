@@ -3,8 +3,22 @@ import cmath
 import math
 from scipy.fft import fft2, ifft2, fftshift
 
-
 pi = math.pi 
+
+
+def generate_kgrid(num_grids: int, start: float, end: float):
+    """
+    Generate square k-grid in z-space
+    """
+    k_grid = np.zeros((num_grids, num_grids), dtype=complex)
+    x = np.linspace(start, end, num=num_grids)
+
+    for m in range(num_grids):
+        for n in range(num_grids):
+            k_grid[m, n] = complex(x[m], x[n])
+
+    return k_grid
+
 
 class k_grid:
     
@@ -59,3 +73,15 @@ class k_grid:
         
         return fft2(fftshift(G))
         
+
+if __name__ == "__main__":
+    import matplotlib.pyplot as plt
+    k = generate_kgrid(32, -1, 1)
+
+    x = np.real(k)
+    y = np.imag(k)
+
+    x = x[x != 0]
+    y = y[y != 0]
+    plt.plot(x, y, marker="o", linestyle="", c="blue")
+    plt.show()
