@@ -4,6 +4,26 @@ from math import isclose
 
 from numpy.typing import NDArray
 
+def generate_base_DN(L: int, N: int = 0, electrode_area:float = 1., body_radius:float = 1.):
+    """
+    Algorithm based on "Reconstructions of Chest Phantoms"
+    """
+    if N == 0:
+        N = L - 1
+
+    base_DN = np.zeros((N, N))
+    for m in range(1, N + 1):
+        m_idx = m - 1
+        if m <= (L / 2):
+            entry = m
+        else:
+            entry = m - (L / 2)
+
+        base_DN[m_idx, m_idx] = electrode_area / body_radius * entry
+
+    return base_DN
+
+
 class Mapper:
     """
     This class generates DN and ND maps, contained in one Map object.
@@ -47,8 +67,6 @@ class Mapper:
         self.radius = radius
         self.ortho = ortho
 
-        self.c_mx = np.zeros_like(current_mx)
-        self.u_mx = np.zeros_like(voltage_mx)
         self.DN = np.zeros((self.N, self.N))
         self.ND = np.zeros((self.N, self.N))
 
@@ -76,21 +94,21 @@ class Mapper:
 
             # Right apply R^-1 to v_mx to obtain u_mx
             # (i.e. same action on both matrices)
-            self.u_mx = self.v_mx @ linalg.inv(R)
+            self.v_mx = self.v_mx @ linalg.inv(R)
 
         else:
             # Iteratively normalize current and voltage vectors
             for k in range(self.N):
                 jk_norm = linalg.norm(self.j_mx[:, k], 2)
-                self.c_mx[:, k] = self.j_mx[:, k]/jk_norm
-                self.u_mx[:, k] = self.v_mx[:, k]/jk_norm
+                self.j_mx[:, k] = self.j_mx[:, k]/jk_norm
+                self.v_mx[:, k] = self.v_mx[:, k]/jk_norm
 
         # Populate ND map (R matrix)
-        for n in range(self.N):
-            for m in range(self.N):
-                c_n = self.c_mx[:, n]
-                u_m = self.u_mx[:, m]
-                self.ND[n, m] = self.radius / self.electrode_area * np.inner(c_n, u_m)
+        for m in range(self.N):
+            for n in range(self.N):
+                t_m = self.j_mx[:, m]
+                v_n = self.v_mx[:, n]
+                self.ND[m, n] = self.radius / self.electrode_area * np.inner(t_m, v_n)
 
 
     def _compute_DN(self):
@@ -99,11 +117,14 @@ class Mapper:
 
 if __name__ == "__main__":
     # Simple test
-    current = np.genfromtxt("../tests/EIT_Data/Current.txt", delimiter=" ").transpose()
-    voltage = np.genfromtxt("../tests/EIT_Data/Voltage_1.txt", delimiter=" ").transpose()
+    current = np.genfromtxt("./tests/EIT_Data/Current.txt", delimiter=" ").transpose()
+    voltage = np.genfromtxt("./tests/EIT_Data/Voltage_1.txt", delimiter=" ").transpose()
 
     print(f"Current and voltage data from {current.shape[0]} electrodes, with {current.shape[1]} patterns.")
 
     mapper = Mapper(current, voltage)
     print("DN is a matrix with shape", mapper.DN.shape)
     print("ND is a matrix with shape", mapper.ND.shape)
+
+    base_DN = generate_base_DN(L=16, N=15)
+    print(base_DN)
