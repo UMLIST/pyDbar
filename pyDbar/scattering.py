@@ -5,7 +5,7 @@ import math
 pi = math.pi
 
 
-def f_coef(n, k):
+def coef(n, k):
     """
     Fourier coefficient defined as a_n(k) in "Reconstructions of Chest Phantoms"
     """
@@ -16,20 +16,20 @@ def approx_scatter(L, body_radius, d_theta, electrode_area, delta_DN, k: complex
     # Note that m and n are summation indices that start at 1
     # and go to L/2 - 1. We define m_idx, n_idx for matrix indices.
 
-    a_halfL_kbar = f_coef(L//2, k.conjugate())
-    a_halfL_k = f_coef(L//2, k)
+    a_halfL_kbar = coef(L//2, k.conjugate())
+    a_halfL_k = coef(L//2, k)
 
     second = complex(0, 0)
     for n in range(1, int(L//2)):
         n_idx = n - 1
-        a_n_k = f_coef(n, k)
+        a_n_k = coef(n, k)
         second += a_halfL_kbar * a_n_k * (delta_DN[L//2, n_idx] + 1j * delta_DN[L//2, L//2 + n_idx])
     second *= math.sqrt(2)
 
     third = complex(0, 0)
     for m in range(1, int(L//2)):
         m_idx = m - 1
-        a_m_kbar = f_coef(m, k.conjugate())
+        a_m_kbar = coef(m, k.conjugate())
         third += a_m_kbar * a_halfL_k * (delta_DN[m_idx, L//2] - 1j * delta_DN[L//2 + m_idx, L//2])
     third *= math.sqrt(2)
 
@@ -39,11 +39,11 @@ def approx_scatter(L, body_radius, d_theta, electrode_area, delta_DN, k: complex
     for m in range(1, L//2):
         m_idx = m - 1
 
-        a_m_kbar = f_coef(m, k.conjugate())
+        a_m_kbar = coef(m, k.conjugate())
 
         for n in range(1, L//2):
             n_idx = n - 1
-            a_n_k = f_coef(n, k)
+            a_n_k = coef(n, k)
             first_inside = (delta_DN[m_idx, n_idx] +
                             delta_DN[L//2 + m_idx, L//2 + n_idx] +
                             1j * (delta_DN[m_idx, L//2 + n_idx] - delta_DN[L//2 + m_idx, n_idx]))
