@@ -12,12 +12,12 @@ This is a fork of the [original `pydbar`](https://github.com/NablaIP/pydbar) imp
 The D-bar method can be used for Electrical Impedance Tomography in a 2D framework. This method is based on the theoretical reconstruction procedure of Nachman and a regularizing strategy that was established by Siltanen and provides a natural framework for numerical implementation
 
 ## Algorithm Review
-Here we explain the main steps of the Dbar algorithm with either direct numerical implementation or with theoretical motivation. We assume that the system we use applies current and measures voltages along a (finite) set of electrodes.
+Here we explain the main steps of the Dbar algorithm with either direct numerical implementation or with theoretical motivation. We assume that the system we use applies current and measures voltages along a (finite) set of electrodes. For convenience, we also assume that the body of interest is a disk of radius $r = 1$.
 
 ### Neumann-to-Dirichlet (ND) Map
-Let $L$ be the number of electrodes and let $\mathbf{j}^k \in \R^L$ denote the $k$<sup>th</sup> **current pattern** vector such that $\mathbf{j}^k = \begin{bmatrix}j^k_1 & \ldots & j^k_L\end{bmatrix}^\intercal$. By Kirchoff's current law (KCL),
+Let $L$ be the number of electrodes and let $\mathbf{\tilde{j}}^k \in \R^L$ denote the $k$<sup>th</sup> **current pattern** vector such that $\mathbf{\tilde{j}}^k = \begin{bmatrix}\tilde{j}^k_1 & \ldots & \tilde{j}^k_L\end{bmatrix}^\intercal$. By Kirchoff's current law (KCL),
 $$
-    \sum_{\ell=1}^L j^k_\ell = 0,
+    \sum_{\ell=1}^L \tilde{j}^k_\ell = 0,
 $$
 so the set of valid current patterns live in an $L-1$-dimensional linear subspace of $\R^L$. That is, we can apply at most $L-1$ linearly independent current patterns since the $L$<sup>th</sup> value would be linearly dependent in order to satisfy KCL. Then 
 $$
@@ -27,7 +27,7 @@ $$
 There are a few choices that can be considered for current patterns, but for now we focus on three:
 - Adjacent current patterns: 
 $$
-    j_\ell^k =
+    \tilde{j}_\ell^k =
     \begin{cases}
         M,\ k = \ell \\
         -M,\ k = \ell + 1 \\
@@ -36,19 +36,21 @@ $$
     \qquad M \in \R^+
 $$
 
-- Trigonometric current patterns: 
+- Trigonometric current patterns (by [Isaacson et al.]()): 
 $$
-    j_\ell^k = M
+    \tilde{j}_\ell^k = M
     \begin{cases}
-        \cos(k \theta_\ell),\ k = 1, \ldots, \frac{L}{2}\\
+        \cos(k \theta_\ell),\ k = 1, \ldots, \frac{L}{2} - 1 \\
+        \cos(\pi\ell),\ k = \frac{L}{2} \\
         \sin((k - \frac{L}{2})\theta_\ell),\ k = \frac{L}{2} + 1, \ldots, L-1
     \end{cases},
-    \qquad M \in \R^+
+    \qquad M \in \R^+,
 $$
+where $\theta_\ell = \frac{2\pi\ell}{L}$, the angle of the center of the $\ell$<sup>th</sup> electrode.
 
 - Rotated trigonometric patterns (optimal by [Demidenko et al.](https://ieeexplore.ieee.org/document/1386561))
 $$
-    j_\ell^k = M
+    \tilde{j}_\ell^k = M
     \begin{cases}
         \cos(k \theta_\ell),\ k = 1, \ldots, \frac{L}{2} - 1 \\
         Q \cos(k \theta_\ell),\ k = \frac{L}{2} \\
@@ -64,50 +66,58 @@ $$
     Q = \frac{1}{\sqrt{2} \cos(\theta_0 \frac{L}{2})}.
 $$
 
-For each current pattern $\mathbf{j}^k$, we obtain a voltage pattern $\mathbf{v}^k \in \R^L$. Since the resultant voltages are only determined up to an additive constant, for mathematical convenience, we enforce that $\sum_\ell v_\ell^k = 0$. This follows common practice in EIT. In our implementation, we don't expect the incoming data to have such property, so we enforce is when needed, in the `Mapper` object.
+For each current pattern $\mathbf{\tilde{j}}^k$, we obtain a voltage pattern $\mathbf{\tilde{v}}^k \in \R^L$. Since the resultant voltages are only determined up to an additive constant, for mathematical convenience, we enforce that $\sum_\ell v_\ell^k = 0$. This follows common practice in EIT. In our implementation, we don't expect the incoming data to have such property, so we enforce is when needed, in the `Mapper` object.
 
 To numerically obtain the ND map, `Mapper` performs the following:
 #### 1. Zero-mean the voltages:
 Compute sample mean
 $$
-    \mu^k = \frac{1}{L}\sum_{\ell = 1}^L v^k_\ell.
+    \mu^k = \frac{1}{L}\sum_{\ell = 1}^L \tilde{v}^k_\ell.
 $$
 For each $\ell = 1,\ldots,N$,
 $$
-    \tilde{v}^k_\ell = v^k_\ell - \mu^k
+    \hat{v}^k_\ell = \tilde{v}^k_\ell - \mu^k
     \implies
-    \mathbf{\tilde{v}}^k = \begin{bmatrix}
-        \tilde{v}^k_1 & \ldots & \tilde{v}^k_L
+    \mathbf{\hat{v}}^k = \begin{bmatrix}
+        \hat{v}^k_1 & \ldots & \hat{v}^k_L
     \end{bmatrix}^\intercal
 $$
 
 #### 2. Normalize measurements:
 $$
-\mathbf{c}^k = \frac{\mathbf{j}^k}{\|\mathbf{j}^k\|_2}
+\mathbf{j}^k = \frac{\mathbf{\tilde{j}}^k}{\|\mathbf{\tilde{j}}^k\|_2}
 \qquad \text{and} \qquad
-\mathbf{u}^k = \frac{\mathbf{\tilde{v}}^k}{\|\mathbf{j}^k\|_2},
+\mathbf{v}^k = \frac{\mathbf{\hat{v}}^k}{\|\mathbf{\tilde{j}}^k\|_2},
 $$
-where $\mathbf{c}^k$ and $\mathbf{u}^k$ are normalized currents and voltages we use moving forward.
+where $\mathbf{j}^k$ and $\mathbf{v}^k$ are normalized currents and voltages we use moving forward.
 
-#### 3. Define the discrete approximation of the ND map $\Lambda_\sigma \approx \mathbf{R}_\sigma \in \R^{N \times N}$ such that
+#### 3. Define the discrete approximation of the ND map $\mathbf{\tilde{R}}_\sigma \in \R^{N \times N}$
+First, for convenience, define
+$$
+    \mathbf{R}_\sigma(m, n) = \langle \mathbf{j}^m, \mathbf{v}^n \rangle_L,
+$$
+where
+$$
+    \langle u(\cdot), w(\cdot) \rangle_L = \sum_{\ell = 1}^{L} \overline{u(\theta_\ell)} w(\theta_\ell).
+$$
+Then let
 $$
 \begin{align*}
-    \mathbf{R}_\sigma(m, n) &= \langle \frac{\mathbf{c}^m}{A_\ell}, \mathbf{u}^n \rangle_L \\
-                            &= \sum_{\ell = 1}^{L} \frac{\overline{c^m_\ell}}{A_\ell} \cdot u^n_\ell,
+    \mathbf{\tilde{R}}_\sigma(m, n) &= \langle \frac{\mathbf{j}^m}{A_\ell}, \mathbf{v}^n \rangle_L \\
+                            &= \sum_{\ell = 1}^{L} \frac{\overline{j^m_\ell}}{A_\ell} \cdot v^n_\ell,
 \end{align*}
 $$
 where $1 \leq m, n \leq N$ and $A_\ell$ is the area of the $\ell$<sup>th</sup> electrode. Most likely, $\forall \ell,\ A_\ell = A$, so we can simplify the above to
 $$
-\begin{align*}
-    \mathbf{R}_\sigma(m, n) &= \frac{1}{A} \sum_{\ell = 1}^{L} \overline{c^m_\ell} \cdot u^n_\ell \\
-                            &= \frac{1}{A}\langle \mathbf{c}^m, \mathbf{u}^n \rangle.
-\end{align*}
+    \mathbf{\tilde{R}}_\sigma(m, n)
+    = \frac{1}{A} \sum_{\ell = 1}^{L} \overline{j^m_\ell} \cdot v^n_\ell
+    = \frac{\mathbf{R}_\sigma}{A}.
 $$
 
 ### Dirichlet-to-Neumann (DN) Map
-Having obtained our ND map approximation $\mathbf{R}_\sigma$, we simply invert it to obtain the approximation to the Dirichlet-to-Neumann map:
+Having obtained our ND map approximation $\mathbf{\tilde{R}}_\sigma$, we simply invert it to obtain the approximation to the Dirichlet-to-Neumann map:
 $$
-    \mathbf{L}_\sigma = \mathbf{R}_\sigma^{-1}.
+    \mathbf{L}_\sigma := \mathbf{\tilde{R}}_\sigma^{-1} = \left(\frac{\mathbf{R}}{A}\right)^{-1}.
 $$
 The relationship above is mathematically guaranteed. Additionally, $\mathbf{R}_\sigma$ is guaranteed to be non-singular (and thus invertible). We won't get into both guarantees here.
 
