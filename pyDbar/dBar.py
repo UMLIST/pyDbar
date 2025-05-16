@@ -38,7 +38,7 @@ class dBar:
         N = len(k_grid.pos_x)
 
         for l in range(N):
-                RHS[ k_grid.pos_x[l], k_grid.pos_y[l] ] = cmath.exp(-2j*( (k_grid.k[ k_grid.pos_x[l], k_grid.pos_y[l] ]*zz).real) )* tK.tK[k_grid.pos_x[l], k_grid.pos_y[l]]*complex(mu[l], -mu[l+N])
+            RHS[ k_grid.pos_x[l], k_grid.pos_y[l] ] = cmath.exp(-2j*( (k_grid.k[ k_grid.pos_x[l], k_grid.pos_y[l] ]*zz).real) )* tK.tK[k_grid.pos_x[l], k_grid.pos_y[l]]*complex(mu[l], -mu[l+N])
 
 
         F_RHS = fft2(RHS)
@@ -87,8 +87,7 @@ class dBar:
                     self.sigma[j, jj] = mu[k_grid.index]*mu[k_grid.index]-mu[k_grid.index+N]*mu[k_grid.index+N]
 
 
-    def plot(self):
-        
+    def plot(self, out_file = ""):
         Z_N = self.Z.shape[0]
         X = np.zeros(Z_N)
         Y = np.zeros(Z_N)
@@ -105,6 +104,46 @@ class dBar:
             
 
         sigma_x = np.ma.masked_where(sigma_x==0, sigma_x)
-        plt.pcolormesh(X, Y, sigma_x, cmap='RdBu')
-        plt.colorbar()   
+
+        fig, ax = plt.subplots()
+        pcm = ax.pcolormesh(X, Y, sigma_x, cmap='RdBu')
+        fig.colorbar(pcm)
+
+        ax.set_aspect("equal")
+        fig.tight_layout()
+
+        if out_file:
+            fig.savefig(out_file)
+        else:
+            plt.show()
     
+
+if __name__ == "__main__":
+    from pyDbar.k_grid import k_grid
+    from pyDbar.Simulation import Simulation
+    from pyDbar.Mapper import Mapper
+    from pyDbar.scattering import scattering
+
+    from pyeit.mesh.wrapper import PyEITAnomaly_Circle
+
+
+    L = 16
+    anomaly = [PyEITAnomaly_Circle(center=[0.5, 0.], r=0.2, perm=1.5),
+               PyEITAnomaly_Circle(center=[-0.5, 0.], r=0.2, perm=0.5)]
+    
+    body = Simulation(L, anomaly=anomaly)
+    body.simulate()
+
+    base = Simulation(L)
+    base.simulate()
+
+    mapper = Mapper(body.current, body.voltage, electrode_area=0.1)
+    # mapper_ref = Mapper(base.current, base.voltage)
+    base_DN = generate_base_DN(L, L-1, electrode_area=0.1)
+
+    kp = k_grid(2.3, 4)
+    tK = scattering(kp, mapper, base_DN)
+
+    model = dBar(1., 5)
+    model.solve(kp, tK)
+    model.plot()
