@@ -6,16 +6,41 @@ from scipy.fft import fft2, ifft2, fftshift
 pi = math.pi 
 
 
-def generate_kgrid(num_grids: int, start: float, end: float):
+def generate_kgrid(r: float, p: int) -> dict:
     """
-    Generate square k-grid in z-space
-    """
-    k_grid = np.zeros((num_grids, num_grids), dtype=complex)
-    x = np.linspace(start, end, num=num_grids)
+    Generate square k-grid in z-space.
+    Given a radius of r, the kgrid lies within [-r, r]^2,
+    with m = 2^p grid lines. Then the step size is h = (2*r)/(m-1).
+    The returned object is a dictionary with keys listed below.
 
-    for m in range(num_grids):
-        for n in range(num_grids):
-            k_grid[m, n] = complex(x[m], x[n])
+    Input:
+    r: float - Radius of support
+    p: int   - Value for 2^p, the number of grids generated
+
+    Output dict parameters:
+    grid: NDArray      - [m x m] grid points
+    step_size: float   - Step size: h = (2*r)/(m-1)
+    num_gridlines: int - Number of grid lines: m = 2^p
+    radius: float      - Radius of support
+    """
+    num_gridlines = 2**p
+    step_size = (2 * r) / (num_gridlines - 1)
+
+    grid = np.zeros((num_gridlines, num_gridlines), dtype=complex)
+    x = np.linspace(-r, r, num=num_gridlines)
+    print(x)
+
+    for m in range(num_gridlines):
+        for n in range(num_gridlines):
+            grid[m, n] = complex(x[m], x[n])
+
+    k_grid = {
+        "grid": grid,
+        "step_size": step_size,
+        "num_gridlines": num_gridlines,
+        "radius": r,
+        "p": p
+    }
 
     return k_grid
 
