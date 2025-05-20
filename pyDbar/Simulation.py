@@ -108,6 +108,7 @@ class Simulation:
 
         if out_file:
             fig.savefig(out_file)
+            plt.close()
         else:
             plt.show()
 
