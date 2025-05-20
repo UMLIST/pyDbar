@@ -5,6 +5,23 @@ import math
 pi = math.pi
 
 
+def approx_scatter2(N, current_mx, delta_theta, delta_DN, k: complex):
+    """
+    t^{exp} approximation based on "A Real-time D-bar Algorithm"
+    """
+    # Use angular coords z_l = exp((2 *pi * l) / L)
+    z = np.exp(1j*np.arange(0, 2 * pi, delta_theta))
+
+    c = current_mx.T @ np.exp(1j * k * z)
+    d = current_mx.T @ np.exp(1j * k.conjugate() * z.conjugate())
+
+    t_exp = complex(0, 0)
+    for j in range(N):
+        for m in range(N):
+            t_exp += c[m] * d[j] * delta_DN[j, m]
+    return t_exp
+
+
 def coef(n, k):
     """
     Fourier coefficient defined as a_n(k) in "Reconstructions of Chest Phantoms"
@@ -13,6 +30,10 @@ def coef(n, k):
 
 
 def approx_scatter(L, body_radius, d_theta, electrode_area, delta_DN, k: complex):
+    """
+    t^{exp} approximation based on "Reconstructions of Chest Phantoms"
+    """
+
     # Note that m and n are summation indices that start at 1
     # and go to L/2 - 1. We define m_idx, n_idx for matrix indices.
 
@@ -94,12 +115,18 @@ if __name__ == "__main__":
         for n in range(k_grid.shape[1]):
             k = k_grid[m, n]
             if abs(k) <= 1:
-                t_exp[m, n] = approx_scatter(L=L,
-                                             body_radius=1,
-                                             d_theta=delta_theta,
-                                             electrode_area=0.1,
-                                             k=k,
-                                             delta_DN=delta_DN)
+                t_exp[m, n] = approx_scatter2(N=L-1,
+                                              current_mx=body_map.j_mx,
+                                              delta_theta=delta_theta,
+                                              delta_DN=delta_DN,
+                                              k=k)
+
+                # t_exp[m, n] = approx_scatter(L=L,
+                #                              body_radius=1,
+                #                              d_theta=delta_theta,
+                #                              electrode_area=0.1,
+                #                              k=k,
+                #                              delta_DN=delta_DN)
 
     x = np.real(k_grid)
     y = np.imag(k_grid)
