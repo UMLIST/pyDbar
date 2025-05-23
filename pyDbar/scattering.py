@@ -15,7 +15,7 @@ def approx_scatter(k_grid: dict, pointwise_solver, tol: float = 1e-1, **kwargs):
         for n in range(grid.shape[1]):
             k = grid[m, n]
 
-            # Only compute over support
+            # Only compute over support (disk)
             if abs(k) <= k_grid["r"] + tol:
                 t_approx[m, n] = pointwise_solver(k=k, **kwargs)
 
@@ -146,10 +146,10 @@ def plot_scatter(k_grid: dict,
         axs[i].set_aspect("equal")
         axs[i].grid(linestyle="--", linewidth=0.5, alpha=0.75)
         if plot_points:
-            axs[i].scatter(x, y, marker=".", c="black", alpha=0.25)
+            axs[i].scatter(x, y, marker=".", c="black", alpha=0.2, s=4)
 
-    axs[0].set_title(rf"Scatter: Real Part ($r = ${k_grid['r']}, $M = 2^{({k_grid['m']})} = {k_grid["grid"].shape[0]}$)")
-    axs[1].set_title(rf"Scatter: Imaginary Part ($r = ${k_grid['r']}, $M = 2^{({k_grid['m']})} = {k_grid["grid"].shape[0]}$)")
+    axs[0].set_title(rf"$\mathbf{{t}}^{{\text{{exp}}}}$: Real Part ($r = {k_grid['r']}, M = 2^{{{k_grid['m']}}} = {k_grid['M']}$)")
+    axs[1].set_title(rf"$\mathbf{{t}}^{{\text{{exp}}}}$: Imaginary Part ($r = {k_grid['r']}, M = 2^{{{k_grid['m']}}} = {k_grid['M']}$)")
     # fig.colorbar(pcm1, ax=axs[0])
     # fig.colorbar(pcm2, ax=axs[1])
     fig.tight_layout()
