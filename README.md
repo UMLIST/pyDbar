@@ -15,7 +15,7 @@ The D-bar method can be used for Electrical Impedance Tomography in a 2D framewo
 Here we explain the main steps of the Dbar algorithm with either direct numerical implementation or with theoretical motivation. We assume that the system we use applies current and measures voltages along a (finite) set of electrodes. For convenience, we also assume that the body of interest is a disk of radius $r = 1$.
 
 ### Neumann-to-Dirichlet (ND) Map
-Let $L$ be the number of electrodes and let $\mathbf{\tilde{j}}^k \in \mathbb{R}^L$ denote the $k$<sup>th</sup> **current pattern** vector such that $\mathbf{\tilde{j}}^k = \begin{bmatrix}\tilde{j}^k_1 & \ldots & \tilde{j}^k_L\end{bmatrix}^\intercal$. By Kirchoff's current law (KCL),
+Let $L$ be the number of electrodes and let $\mathbf{\tilde{j}}^k \in \R^L$ denote the $k$<sup>th</sup> **current pattern** vector such that $\mathbf{\tilde{j}}^k = \begin{bmatrix}\tilde{j}^k_1 & \ldots & \tilde{j}^k_L\end{bmatrix}^\intercal$. By Kirchoff's current law (KCL),
 $$
     \sum_{\ell=1}^L \tilde{j}^k_\ell = 0,
 $$
