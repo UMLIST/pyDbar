@@ -6,7 +6,7 @@ from scipy.fft import fft2, ifft2, fftshift
 pi = math.pi 
 
 
-def generate_kgrid(r: float, p: int) -> dict:
+def generate_kgrid(r: float, m: int) -> dict:
     """
     Generate square k-grid in z-space.
     Given a radius of r, the kgrid lies within [-r, r]^2,
@@ -15,7 +15,7 @@ def generate_kgrid(r: float, p: int) -> dict:
 
     Input:
     r: float - Radius of support
-    p: int   - Value for 2^p, the number of grids generated
+    m: int   - Value for M = 2^m, the number of grids generated
 
     Output dict parameters:
     grid: NDArray      - [m x m] grid points
@@ -23,23 +23,23 @@ def generate_kgrid(r: float, p: int) -> dict:
     num_gridlines: int - Number of grid lines: m = 2^p
     radius: float      - Radius of support
     """
-    num_gridlines = 2**p
+    num_gridlines = 2**m
     step_size = (2 * r) / (num_gridlines - 1)
+    print()
 
     grid = np.zeros((num_gridlines, num_gridlines), dtype=complex)
     x = np.linspace(-r, r, num=num_gridlines)
     print(x)
 
-    for m in range(num_gridlines):
+    for j in range(num_gridlines):
         for n in range(num_gridlines):
-            grid[m, n] = complex(x[m], x[n])
+            grid[j, n] = complex(x[j], x[n])
 
     k_grid = {
         "grid": grid,
-        "step_size": step_size,
-        "num_gridlines": num_gridlines,
-        "radius": r,
-        "p": p
+        "h": step_size,
+        "r": r,
+        "m": m
     }
 
     return k_grid
