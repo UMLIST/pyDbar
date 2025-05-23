@@ -1,112 +1,68 @@
 import numpy as np
-import cmath
-import math
-from scipy.fft import fft2, ifft2, fftshift
-
-pi = math.pi 
-
 
 def generate_kgrid(r: float, m: int) -> dict:
     """
-    Generate square k-grid in z-space.
-    Given a radius of r, the kgrid lies within [-r, r]^2,
-    with m = 2^p grid lines. Then the step size is h = (2*r)/(m-1).
+    Generate square k-grid in z-space. The number of grid points
+    is (2M)^2, where M = 2^m. A disk of radius r is drawn inside of
+    the square [-r, r]^2. Along each axis, between the intersections
+    of the disk and the axis, there are M grid points. Beyond the
+    disk, there are M/2 points on each side. The step size between
+    each grid point is h = (2*r)/(M-1).
+
     The returned object is a dictionary with keys listed below.
 
     Input:
     r: float - Radius of support
     m: int   - Value for M = 2^m, the number of grids generated
 
-    Output dict parameters:
-    grid: NDArray      - [m x m] grid points
-    step_size: float   - Step size: h = (2*r)/(m-1)
-    num_gridlines: int - Number of grid lines: m = 2^p
-    radius: float      - Radius of support
+    Output parameters:
+    grid: NDArray - [M x M] grid points
+    h: float      - Step size: h = (2*r)/(m-1)
+    r: float      - Radius of support
+    m: int        - The power in M = 2^m grid points
+    M: int        - The unextended number of grid points M = 2^m
     """
-    num_gridlines = 2**m
-    step_size = (2 * r) / (num_gridlines - 1)
-    print()
+    M = 2**m # Number of (unextended) grid points
+    h = (2 * r) / (M - 1) # Step size
 
-    grid = np.zeros((num_gridlines, num_gridlines), dtype=complex)
-    x = np.linspace(-r, r, num=num_gridlines)
-    print(x)
+    # We define the (extended) edge of our square as
+    # s = r + (M/2)*h = r + ((M * r) / (M - 1))
+    # This is explained in "D-bar Demystified"
+    s = r + ((M * r) / (M - 1))
 
-    for j in range(num_gridlines):
-        for n in range(num_gridlines):
+    # The extension results in 2M x 2M grids
+    grid = np.zeros((2 * M, 2 * M), dtype=complex)
+    x = np.arange(start=-s, stop=s + h, step=h)
+
+    for j in range(2 * M):
+        for n in range(2 * M):
             grid[j, n] = complex(x[j], x[n])
 
     k_grid = {
         "grid": grid,
-        "h": step_size,
+        "h": h,
         "r": r,
-        "m": m
+        "m": m,
+        "M": M
     }
 
     return k_grid
 
 
-class k_grid:
-    
-    pos_x = []
-    pos_y = []
-    
-    def __init__(self, R, m):
-        self.R = R
-        self.m = m
-        self.s = 2.3*R
-        self.h = 2*(2.3*R)/(2**m)
-        self.N = 2**m
-        self.index = -1
-        self.k = np.zeros((self.N, self.N), dtype=complex)
-        self.generate()
-        self.FG = self.fund_sol()
-        
-    def generate(self):
-        
-        for j in range(self.N):
-            for jj in range(self.N):
-                
-                self.k[j, jj] = complex(-self.s + j*self.h, -self.s + jj*self.h)
-        
-                if(abs(self.k[j, jj]) < self.R):
-                    self.pos_x.append(j)
-                    self.pos_y.append(jj)
-                
-                if(abs(self.k[j, jj]) < 1e-7):
-                    self.index = len(self.pos_x)-1
-                    
-      
-    
-    def fund_sol(self):
-        
-        eps = self.s/10
-        RR = (self.s-eps)/2
-        i0 = 1e-7
-        
-        G = np.zeros((self.N, self.N), dtype=complex)
-        
-        for j in range(self.N):
-            for jj in range(self.N):
-                
-                abs_k = abs(self.k[j, jj])
-                
-                if (abs_k < self.s and abs_k > i0):
-                    G[j, jj] = 1/(self.k[j, jj]*pi)
-                    
-                    if(abs_k >= 2*RR):
-                        G[j, jj] = G[j, jj]*(1 - (abs_k - 2*RR)/eps)
-        
-        return fft2(fftshift(G))
-        
-
 if __name__ == "__main__":
     import matplotlib.pyplot as plt
-    k = generate_kgrid(32, -1, 1)
+    k = generate_kgrid(m=4, r=2)
 
-    x = np.real(k)
-    y = np.imag(k)
+    x = np.real(k["grid"])
+    y = np.imag(k["grid"])
 
     x = x[x != 0]
     y = y[y != 0]
-    plt.plot(x, y, marker="o", linestyle="", c="blue")
+
+    circ_grid = k["grid"][np.abs(k["grid"]) <= k["r"]]
+    x_circ = np.real(circ_grid)
+    y_circ = np.imag(circ_grid)
+
+    plt.plot(x, y, marker=".", linestyle="", c="blue")
+    plt.plot(x_circ, y_circ, marker=".", linestyle="", c="red")
     plt.show()
