@@ -16,7 +16,7 @@ def approx_scatter(k_grid: dict, pointwise_solver, tol: float = 1e-1, **kwargs):
             k = grid[m, n]
 
             # Only compute over support
-            if abs(k) <= k_grid["radius"] + tol:
+            if abs(k) <= k_grid["r"] + tol:
                 t_approx[m, n] = pointwise_solver(k=k, **kwargs)
 
     return t_approx
@@ -140,7 +140,7 @@ def plot_scatter(k_grid: dict,
     for i in range(len(axs)):
         # Draw a circle when not passed in t_exp (potential image for presentations)
         if t_exp is None:
-            circle = Circle((0, 0), k_grid["radius"], fill=False, edgecolor="red")
+            circle = Circle((0, 0), k_grid["r"], fill=False, edgecolor="red")
             axs[i].add_patch(circle)
 
         axs[i].set_aspect("equal")
@@ -148,8 +148,8 @@ def plot_scatter(k_grid: dict,
         if plot_points:
             axs[i].scatter(x, y, marker=".", c="black", alpha=0.25)
 
-    axs[0].set_title(rf"Scatter: Real Part ($r = ${k_grid['radius']}, $p = ${k_grid['p']})")
-    axs[1].set_title(rf"Scatter: Imaginary Part ($r = ${k_grid['radius']}, $p = ${k_grid['p']})")
+    axs[0].set_title(rf"Scatter: Real Part ($r = ${k_grid['r']}, $M = 2^{({k_grid['m']})} = {k_grid["grid"].shape[0]}$)")
+    axs[1].set_title(rf"Scatter: Imaginary Part ($r = ${k_grid['r']}, $M = 2^{({k_grid['m']})} = {k_grid["grid"].shape[0]}$)")
     # fig.colorbar(pcm1, ax=axs[0])
     # fig.colorbar(pcm2, ax=axs[1])
     fig.tight_layout()
@@ -191,7 +191,7 @@ if __name__ == "__main__":
     base_DN = base_map.DN
     delta_DN = body_DN - base_DN
 
-    k_grid = generate_kgrid(r=3, p=5)
+    k_grid = generate_kgrid(r=3, m=5)
     t_exp = approx_scatter(k_grid,
                            pointwise_approx,
                            current_mx=body_map.j_mx,
