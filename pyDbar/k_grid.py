@@ -51,18 +51,27 @@ def generate_kgrid(r: float, m: int) -> dict:
 
 if __name__ == "__main__":
     import matplotlib.pyplot as plt
+
     k = generate_kgrid(m=4, r=2)
+    grid = k["grid"]
+    r = k["r"]
+    eps = 0.1
 
-    x = np.real(k["grid"])
-    y = np.imag(k["grid"])
+    print(f"Number of unextended points: {k['M']} x {k['M']}")
+    print(f"Number of actual (extended) points: {grid.shape[0]} x {grid.shape[0]}")
 
-    x = x[x != 0]
-    y = y[y != 0]
+    # Extract points in disk
+    x_disk = np.real(grid[np.abs(grid) <= r + eps])
+    y_disk = np.imag(grid[np.abs(grid) <= r + eps])
 
-    circ_grid = k["grid"][np.abs(k["grid"]) <= k["r"]]
-    x_circ = np.real(circ_grid)
-    y_circ = np.imag(circ_grid)
+    # Extract points outside of disk
+    x_not_disk = np.real(grid[np.abs(grid) > r + eps])
+    y_not_disk = np.imag(grid[np.abs(grid) > r + eps])
 
-    plt.plot(x, y, marker=".", linestyle="", c="blue")
-    plt.plot(x_circ, y_circ, marker=".", linestyle="", c="red")
+    # Plot
+    fig, ax = plt.subplots()
+    ax.plot(x_disk, y_disk, marker=".", linestyle="", c="red")
+    ax.plot(x_not_disk, y_not_disk, marker=".", linestyle="", c="blue")
+    ax.set_aspect("equal")
+    fig.tight_layout()
     plt.show()
