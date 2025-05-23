@@ -7,6 +7,7 @@ from numpy.typing import NDArray
 def generate_base_DN(L: int, N: int = 0, electrode_area:float = 1., body_radius:float = 1.):
     """
     Algorithm based on "Reconstructions of Chest Phantoms"
+    Not sure how good of an approximation this is, compared to using simulated data.
     """
     if N == 0:
         N = L - 1
@@ -26,7 +27,7 @@ def generate_base_DN(L: int, N: int = 0, electrode_area:float = 1., body_radius:
 
 class Mapper:
     """
-    This class generates DN and ND maps, contained in one Map object.
+    This class generates DN and ND maps, contained in one Mapper object.
     Methods are private.
 
     Input:
@@ -41,13 +42,15 @@ class Mapper:
                              current patterns.
 
     Attributes:
-    ND: np.array           - Neumann-to-Dirichlet map (current-to-voltage)
-    DN: np.array           - Dirichlet-to-Neumann map (voltage-to-current)
+    ND: NDArray            - Neumann-to-Dirichlet map (current-to-voltage)
+    DN: NDArray            - Dirichlet-to-Neumann map (voltage-to-current)
+    j_mx: NDArray          - Matrix of orthonormal current patterns
+    v_mx: NDArray          - Matrix of voltage patterns
     """
 
     def __init__(self,
-                 current_mx: NDArray, 
-                 voltage_mx: NDArray,
+                 current_mx: NDArray[np.floating | np.complexfloating],
+                 voltage_mx: NDArray[np.floating | np.complexfloating],
                  electrode_area: float = 1.,
                  radius: float  = 1.,
                  ortho: bool = True):
@@ -82,7 +85,7 @@ class Mapper:
             v = self.v_mx[:, k]
 
             if not isclose(np.sum(v), 0):
-                self.v_mx[:, k] = v - np.mean(v)
+                self.v_mx[:, k] = v - np.mean(v) # pyright: ignore[reportCallIssue, reportArgumentType]
 
     
     def _compute_ND(self):
@@ -90,7 +93,7 @@ class Mapper:
 
         if not self.ortho:
             # Use QR decomp to obtain orthonormal current matrix (Q)
-            self.c_mx, R = linalg.qr(self.j_mx)
+            self.j_mx, R = linalg.qr(self.j_mx) # pyright: ignore[reportCallIssue, reportArgumentType]
 
             # Right apply R^-1 to v_mx to obtain u_mx
             # (i.e. same action on both matrices)
