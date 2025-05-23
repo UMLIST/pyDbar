@@ -1,149 +1,109 @@
 import numpy as np
-import cmath
 import math
-# Contains Linear Operator and GMRES
-import scipy.sparse.linalg as spla
-from numpy import linalg as LG
-import scipy.linalg as sla
 from scipy.fft import fft2, ifft2
-import pyamg
-import matplotlib.pyplot as plt
+from scipy.sparse.linalg import LinearOperator, gmres
+
+from numpy.typing import NDArray
+from typing import Tuple
+
+# mu = mu - vecrl(h*h * ifft(fft(G_dbar) * fft(T mu)))
+
+def vecrl(f: NDArray) -> NDArray:
+    """
+    Generate vector vecrl with properties defined in "Demystified"
+    """
+    flat = f.flatten("F")
+    L = flat.shape[0]
+    vecrl = np.zeros((2 * L))
+
+    for i in range(L):
+        vecrl[i] = flat[i].real
+        vecrl[i + L] = flat[i].imag
+
+    return vecrl
 
 
-pi = math.pi
+def conj_mu(mu: NDArray) -> NDArray:
+    """
+    Helper function to conjugate mu.
 
-class dBar:
-    
-    def __init__(self, R_z, m_z):
-        self.Z = np.zeros( (2**m_z, 2**m_z), dtype=complex)
-        self.load_mesh(1, m_z)
-        
-        self.sigma = np.zeros((2**m_z, 2**m_z))
-    
-    def load_mesh(self, R, m):
-    
-        N = int(pow(2, m))
-        h = 2*R/N
+    Note that the bottom half of mu contains the imaginary coefficients,
+    so we only need to negate those to obtain the conjugate
+    """
+    N = mu.shape[0]
+    conj_mu = np.copy(mu)
+    conj_mu[N//2:] = -conj_mu[N//2:]
 
-        for l in range(N):
-            for ll in range(N):
-                    self.Z[l, ll] = complex(-R + l*h, -R + ll*h)
-                
-    
-    
-    def dBar(self, mu, k_grid, tK, zz):
-    
-        RHS = np.zeros((k_grid.N, k_grid.N), dtype=complex)
-
-        N = len(k_grid.pos_x)
-
-        for l in range(N):
-            RHS[ k_grid.pos_x[l], k_grid.pos_y[l] ] = cmath.exp(-2j*( (k_grid.k[ k_grid.pos_x[l], k_grid.pos_y[l] ]*zz).real) )* tK.tK[k_grid.pos_x[l], k_grid.pos_y[l]]*complex(mu[l], -mu[l+N])
+    return conj_mu
 
 
-        F_RHS = fft2(RHS)
-
-        for j in range(k_grid.N):
-            for jj in range(k_grid.N):
-                F_RHS[j, jj] = F_RHS[j, jj]*k_grid.FG[j, jj]
-
-        RHS = ifft2(F_RHS)
-
-        for l in range(N):
-            mu[l] = mu[l] - (k_grid.h*k_grid.h)*RHS[ k_grid.pos_x[l], k_grid.pos_y[l]].real
-            mu[l+N] = mu[l+N] - (k_grid.h*k_grid.h)*RHS[ k_grid.pos_x[l], k_grid.pos_y[l] ].imag
+def get_lin_op(k_grid, t_exp, z):
+    def lin_op(mu):
+        f = fourier(k_grid, t_exp, mu, z)
+        return mu - vecrl(f)
+    return lin_op
 
 
-        return mu
-    
-  
-    def solve(self, k_grid, tK):
-        
-        N = len(k_grid.pos_x)
-    
-        # Define the b and initial solution as the vectors of 1+0.j
-        b = np.concatenate((np.ones(N), np.zeros(N)), axis=None)
-        mu = np.concatenate((np.ones(N), np.zeros(N)), axis=None)
-
-        
-        zz = self.Z[0, 0]
-
-        def Op(mu):
-            return self.dBar(mu, k_grid, tK, zz)
-
-        A = spla.LinearOperator((2*N,2*N), matvec=Op)
-
-        n = self.Z.shape[0]
-        
-        for j in range(n):
-            for jj in range(n):
-                
-                zz = self.Z[j, jj]
-
-                mu, exitcode = pyamg.krylov.gmres(A, b, x0=mu, maxiter=5, orthog='mgs')
-                #mu = EIT_GMRES(b, mu, 5, Kp, tK, Zz, FG)
-
-                if(abs(zz) <= 1):
-                    self.sigma[j, jj] = mu[k_grid.index]*mu[k_grid.index]-mu[k_grid.index+N]*mu[k_grid.index+N]
+def kz(k: complex, z: NDArray | Tuple) -> complex:
+    return complex(k.real * z[0] - k.imag * z[1], k.real * z[1] + k.imag * z[0])
 
 
-    def plot(self, out_file = ""):
-        Z_N = self.Z.shape[0]
-        X = np.zeros(Z_N)
-        Y = np.zeros(Z_N)
-        h = 2/(Z_N)
-        for i in range(Z_N):
-            X[i] = - 1 + i*h
-            Y[i] = - 1 + i*h
-            
-        sigma_x = np.zeros((Z_N, Z_N))
+def kz_conj(k, z) -> complex:
+    return kz(k, z).conjugate()
 
-        for i in range(Z_N):
-            for j in range(Z_N):
-                sigma_x[j, i] = self.sigma[i, j]
-            
 
-        sigma_x = np.ma.masked_where(sigma_x==0, sigma_x)
+def T_mu(grid: NDArray, t_exp: NDArray, mu: NDArray, z: NDArray | Tuple) -> NDArray:
+    """
+    Compute T mu_conj
+    """
+    T_mu = np.zeros_like(grid)
+    for j in range(grid.shape[1]):
+        for i in range(grid.shape[0]):
+            k = grid[i, j]
+            e_neg_z = np.exp(-1j * (kz(k, z) + kz_conj(k, z)))
 
-        fig, ax = plt.subplots()
-        pcm = ax.pcolormesh(X, Y, sigma_x, cmap='RdBu')
-        fig.colorbar(pcm)
+            # Is that the right index for conj_mu?
+            T_mu[i, j] = t_exp[i, j] / (4 * math.pi * k.conjugate()) * e_neg_z * conj_mu(mu)[i + j]
 
-        ax.set_aspect("equal")
-        fig.tight_layout()
+    return T_mu
 
-        if out_file:
-            fig.savefig(out_file)
-        else:
-            plt.show()
-    
+
+def G_dbar(grid: NDArray) -> NDArray:
+    # If element is 0, return 0, otherwise return 1/(pi * k)
+    return np.where(grid == 0, 0, 1 / (math.pi * grid))
+
+
+def fourier(k_grid, t_exp, mu, z):
+    """
+    Compute h^2 IFFT(FFT(G d_bar) * FFT(T mu_conj)) 
+    """
+    h = k_grid["h"]
+    grid = k_grid["grid"]
+
+    G = G_dbar(grid)
+    T = T_mu(grid, t_exp, mu, z)
+
+    return h**2 * ifft2(fft2(G) * fft2(T)) # pyright: ignore[reportOperatorIssue]
+
+
+def solve(domain):
+    # domain contains z points
+    pass
+
 
 if __name__ == "__main__":
-    from pyDbar.k_grid import k_grid
-    from pyDbar.Simulation import Simulation
-    from pyDbar.Mapper import Mapper
-    from pyDbar.scattering import scattering
+    test_grid = np.ones((6, 6), dtype=complex)
+    test_t_exp = 1.5 * np.ones((6, 6), dtype=complex)
+    print(test_t_exp)
 
-    from pyeit.mesh.wrapper import PyEITAnomaly_Circle
+    test_k_grid = {"grid": test_grid, "h": 1}
+    test_mu = vecrl(np.ones_like(test_grid))
+    test_z = (1, 1)
 
+    f = fourier(test_k_grid, test_t_exp, test_mu, test_z)
+    print(f)
+    print("f shape", f.shape)
 
-    L = 16
-    anomaly = [PyEITAnomaly_Circle(center=[0.5, 0.], r=0.2, perm=1.5),
-               PyEITAnomaly_Circle(center=[-0.5, 0.], r=0.2, perm=0.5)]
-    
-    body = Simulation(L, anomaly=anomaly)
-    body.simulate()
-
-    base = Simulation(L)
-    base.simulate()
-
-    mapper = Mapper(body.current, body.voltage, electrode_area=0.1)
-    # mapper_ref = Mapper(base.current, base.voltage)
-    base_DN = generate_base_DN(L, L-1, electrode_area=0.1)
-
-    kp = k_grid(2.3, 4)
-    tK = scattering(kp, mapper, base_DN)
-
-    model = dBar(1., 5)
-    model.solve(kp, tK)
-    model.plot()
+    v_f = vecrl(f)
+    print(v_f)
+    print("v shape", v_f.shape)
