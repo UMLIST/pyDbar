@@ -72,12 +72,9 @@ def solve_conductivity(domain: NDArray,
                        domain_r: float = 1.,
                        tol: float = 1e-1) -> NDArray:
     K = k_grid.grid["coords"].shape[0] # K is the extended number of grid points
-    # z = domain[:, 0] + 1j * domain[:, 1]
-    # z = domain[0, 0] + 1j * domain[0, 0]
-
     sigmas = np.zeros(domain.shape[0])
 
-    # See if there's a more efficient way of doing this
+    # TODO: See if there's a more efficient way of doing this
     for i, dom_coords in enumerate(domain):
         x = dom_coords[0]
         y = dom_coords[1]
@@ -93,7 +90,7 @@ def solve_conductivity(domain: NDArray,
 
             mu, errorcode = gmres(A, b, x0 = mu0, maxiter=5)
 
-            # This isn't right (need to get mu at [0,0])
+            # TODO: This isn't right (need to get mu at [0,0])
             mu_mx = mu[:(K * K)] + 1j * mu[(K * K):]
             sigmas[i] = np.abs(mu_mx[K//2])**2
 
