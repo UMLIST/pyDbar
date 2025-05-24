@@ -3,6 +3,7 @@ import math
 from scipy.fft import fft2, ifft2
 from scipy.sparse.linalg import LinearOperator
 from pyamg.krylov import gmres
+import matplotlib.pyplot as plt
 
 from numpy.typing import NDArray
 from typing import Tuple, Callable
@@ -24,8 +25,12 @@ def vecrl(f: NDArray) -> NDArray:
 
     return vecrl
 
+def get_G_dbar(k_grid: KGrid) -> NDArray:
+    grid = k_grid.grid
+    return np.where(grid["coords"] == 0, 0, 1 / (math.pi * grid["coords"]))
 
-def fourier(k_grid: KGrid, mu: NDArray, z: NDArray) -> NDArray:
+
+def fourier(k_grid: KGrid, mu: NDArray, G_dbar: NDArray, z: NDArray) -> NDArray:
     """
     Compute h^2 IFFT(FFT(G d_bar) * FFT(T mu_conj)) 
     """
@@ -33,8 +38,6 @@ def fourier(k_grid: KGrid, mu: NDArray, z: NDArray) -> NDArray:
     grid = k_grid.grid
 
     # Are we doing this only inside the disk??
-
-    G_dbar = np.where(grid["coords"] == 0, 0, 1 / (math.pi * grid["coords"]))
     T_mu = get_T_mu(grid["coords"], grid["texp"], mu, z)
 
     return h**2 * ifft2(fft2(G_dbar) * fft2(T_mu)) # pyright: ignore[reportOperatorIssue]
@@ -69,10 +72,10 @@ def get_T_mu(coords: NDArray, t_exp: NDArray, mu: NDArray, z) -> NDArray:
 
 def solve_conductivity(domain: NDArray,
                        k_grid: KGrid,
-                       domain_r: float = 1.,
-                       tol: float = 1e-1) -> NDArray:
+                       domain_r: float = 1.) -> NDArray:
     K = k_grid.grid["coords"].shape[0] # K is the extended number of grid points
     sigmas = np.zeros(domain.shape[0])
+    G_dbar = get_G_dbar(k_grid)
 
     # TODO: See if there's a more efficient way of doing this
     for i, dom_coords in enumerate(domain):
@@ -80,9 +83,9 @@ def solve_conductivity(domain: NDArray,
         y = dom_coords[1]
         z = x + 1j * y
 
-        if np.abs(z) <= domain_r + tol:
+        if np.abs(z) <= domain_r:
             def lin_op(mu):
-                return mu - vecrl(fourier(k_grid, mu, z)) # pyright: ignore
+                return mu - vecrl(fourier(k_grid, mu, G_dbar, z)) # pyright: ignore
             
             mu0 = vecrl(np.ones(K * K)) # Results in [K*K*2,] array
             A = LinearOperator((K * K * 2, K * K * 2), matvec=lin_op) # pyright: ignore[reportCallIssue]
@@ -95,6 +98,19 @@ def solve_conductivity(domain: NDArray,
             sigmas[i] = np.abs(mu_mx[K//2])**2
 
     return sigmas
+
+
+def plot_conductivity(domain, sigmas):
+    fig, ax = plt.subplots(figsize=(6, 6))
+
+    x = domain[:, 0]
+    y = domain[:, 1]
+
+    sc = ax.scatter(x, y, c=sigmas)
+    fig.colorbar(sc)
+    fig.tight_layout()
+
+    plt.show()
 
 
 if __name__ == "__main__":
@@ -124,7 +140,7 @@ if __name__ == "__main__":
                      ref.voltage,
                      electrode_area=electrode_area)
 
-    k_grid = generate_kgrid(r=3, m=4)
+    k_grid = generate_kgrid(r=3.8, m=4)
 
     # Use angular coords z_l = exp((2 * pi * l) / L)
     z_bdry = np.exp(1j*np.arange(0, 2 * math.pi, delta_theta))
@@ -142,8 +158,8 @@ if __name__ == "__main__":
     """
     start_online = perf_counter()
 
-    anomaly = [PyEITAnomaly_Circle(center=[0.5, 0.], r=0.2, perm=1.5),
-               PyEITAnomaly_Circle(center=[-0.5, 0.], r=0.2, perm=0.5)]
+    anomaly = [PyEITAnomaly_Circle(center=[0.5, 0.], r=0.2, perm=3),
+               PyEITAnomaly_Circle(center=[-0.5, 0.], r=0.2, perm=0.1)]
 
     body = Simulation(L=L, anomaly=anomaly)
     body.simulate()
@@ -174,3 +190,5 @@ if __name__ == "__main__":
 
     end_online = perf_counter()
     print(f"Online time: {end_online - start_online}")
+
+    plot_conductivity(domain, sigmas)
