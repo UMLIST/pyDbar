@@ -1,109 +1,179 @@
 import numpy as np
 import math
 from scipy.fft import fft2, ifft2
-from scipy.sparse.linalg import LinearOperator, gmres
+from scipy.sparse.linalg import LinearOperator
+from pyamg.krylov import gmres
 
 from numpy.typing import NDArray
-from typing import Tuple
+from typing import Tuple, Callable
+from pyDbar.k_grid import KGrid
 
 # mu = mu - vecrl(h*h * ifft(fft(G_dbar) * fft(T mu)))
 
 def vecrl(f: NDArray) -> NDArray:
     """
-    Generate vector vecrl with properties defined in "Demystified"
+    Generate array vecrl as described in "Demystified".
     """
     flat = f.flatten("F")
-    L = flat.shape[0]
-    vecrl = np.zeros((2 * L))
+    N = len(flat)
+    vecrl = np.zeros((N * 2))
 
-    for i in range(L):
+    for i in range(N):
         vecrl[i] = flat[i].real
-        vecrl[i + L] = flat[i].imag
+        vecrl[i + N] = flat[i].imag
 
     return vecrl
 
 
-def conj_mu(mu: NDArray) -> NDArray:
-    """
-    Helper function to conjugate mu.
-
-    Note that the bottom half of mu contains the imaginary coefficients,
-    so we only need to negate those to obtain the conjugate
-    """
-    N = mu.shape[0]
-    conj_mu = np.copy(mu)
-    conj_mu[N//2:] = -conj_mu[N//2:]
-
-    return conj_mu
-
-
-def get_lin_op(k_grid, t_exp, z):
-    def lin_op(mu):
-        f = fourier(k_grid, t_exp, mu, z)
-        return mu - vecrl(f)
-    return lin_op
-
-
-def kz(k: complex, z: NDArray | Tuple) -> complex:
-    return complex(k.real * z[0] - k.imag * z[1], k.real * z[1] + k.imag * z[0])
-
-
-def kz_conj(k, z) -> complex:
-    return kz(k, z).conjugate()
-
-
-def T_mu(grid: NDArray, t_exp: NDArray, mu: NDArray, z: NDArray | Tuple) -> NDArray:
-    """
-    Compute T mu_conj
-    """
-    T_mu = np.zeros_like(grid)
-    for j in range(grid.shape[1]):
-        for i in range(grid.shape[0]):
-            k = grid[i, j]
-            e_neg_z = np.exp(-1j * (kz(k, z) + kz_conj(k, z)))
-
-            # Is that the right index for conj_mu?
-            T_mu[i, j] = t_exp[i, j] / (4 * math.pi * k.conjugate()) * e_neg_z * conj_mu(mu)[i + j]
-
-    return T_mu
-
-
-def G_dbar(grid: NDArray) -> NDArray:
-    # If element is 0, return 0, otherwise return 1/(pi * k)
-    return np.where(grid == 0, 0, 1 / (math.pi * grid))
-
-
-def fourier(k_grid, t_exp, mu, z):
+def fourier(k_grid: KGrid, mu: NDArray, z: NDArray) -> NDArray:
     """
     Compute h^2 IFFT(FFT(G d_bar) * FFT(T mu_conj)) 
     """
-    h = k_grid["h"]
-    grid = k_grid["grid"]
+    h = k_grid.h
+    grid = k_grid.grid
 
-    G = G_dbar(grid)
-    T = T_mu(grid, t_exp, mu, z)
+    # Are we doing this only inside the disk??
 
-    return h**2 * ifft2(fft2(G) * fft2(T)) # pyright: ignore[reportOperatorIssue]
+    G_dbar = np.where(grid["coords"] == 0, 0, 1 / (math.pi * grid["coords"]))
+    T_mu = get_T_mu(grid["coords"], grid["texp"], mu, z)
+
+    return h**2 * ifft2(fft2(G_dbar) * fft2(T_mu)) # pyright: ignore[reportOperatorIssue]
 
 
-def solve(domain):
-    # domain contains z points
-    pass
+def get_T_mu(coords: NDArray, t_exp: NDArray, mu: NDArray, z) -> NDArray:
+    """
+    Compute T mu = t^{exp} / (4pi * conj(k)) * e_{-z} * conj(mu),
+    where e_{-z} = exp(-i * (kz + conj(kz))). The operations here
+    use np's vectorized operations, so they're much faster than
+    using nested for loops in Python.
+    """
+    # Flatten with column-major order. This should match vecrl().
+    k = coords.flatten(order="F")
+    t_exp_flat = t_exp.flatten(order="F")
+
+    kz = k * z
+    k_conj = np.conj(k)
+    kz_conj = k_conj * np.conj(z)
+    e_neg_z = np.exp(-1j * (kz + kz_conj))
+
+    # Recall mu is [2K,], where real coeffs are in the
+    # top half and imag coeffs are in the bottom half
+    mu_complex = mu[:len(k)] + 1j * mu[len(k):]
+    mu_conj = np.conj(mu_complex)
+
+    T_mu = t_exp_flat / (4 * np.pi * k_conj) * e_neg_z * mu_conj
+
+    # Don't forget to reshape back to [K x K]
+    return T_mu.reshape((coords.shape[0], coords.shape[1]), order="F")
+
+
+def solve_conductivity(domain: NDArray,
+                       k_grid: KGrid,
+                       domain_r: float = 1.,
+                       tol: float = 1e-1) -> NDArray:
+    K = k_grid.grid["coords"].shape[0] # K is the extended number of grid points
+    # z = domain[:, 0] + 1j * domain[:, 1]
+    # z = domain[0, 0] + 1j * domain[0, 0]
+
+    sigmas = np.zeros(domain.shape[0])
+
+    # See if there's a more efficient way of doing this
+    for i, dom_coords in enumerate(domain):
+        x = dom_coords[0]
+        y = dom_coords[1]
+        z = x + 1j * y
+
+        if np.abs(z) <= domain_r + tol:
+            def lin_op(mu):
+                return mu - vecrl(fourier(k_grid, mu, z)) # pyright: ignore
+            
+            mu0 = vecrl(np.ones(K * K)) # Results in [K*K*2,] array
+            A = LinearOperator((K * K * 2, K * K * 2), matvec=lin_op) # pyright: ignore[reportCallIssue]
+            b = np.ones((K * K * 2))
+
+            mu, errorcode = gmres(A, b, x0 = mu0, maxiter=5)
+
+            # This isn't right (need to get mu at [0,0])
+            mu_mx = mu[:(K * K)] + 1j * mu[(K * K):]
+            sigmas[i] = np.abs(mu_mx[K//2])**2
+
+    return sigmas
 
 
 if __name__ == "__main__":
-    test_grid = np.ones((6, 6), dtype=complex)
-    test_t_exp = 1.5 * np.ones((6, 6), dtype=complex)
-    print(test_t_exp)
+    from pyDbar.k_grid import generate_kgrid
+    from pyDbar.scattering import approx_scatter, pointwise_approx, get_coef_vecs
+    from pyDbar.Mapper import Mapper
+    from pyDbar.Simulation import Simulation
+    from pyeit.mesh.wrapper import PyEITAnomaly_Circle
 
-    test_k_grid = {"grid": test_grid, "h": 1}
-    test_mu = vecrl(np.ones_like(test_grid))
-    test_z = (1, 1)
+    from time import perf_counter
 
-    f = fourier(test_k_grid, test_t_exp, test_mu, test_z)
-    print(f)
-    print("f shape", f.shape)
+    """
+    Offline phase
+    """
+    start_offline = perf_counter()
 
-    v_f = vecrl(f)
-    print(v_f)
-    print("v shape", v_f.shape)
+    # Set up parameters
+    L = 16
+    delta_theta = 2 * math.pi / L
+    electrode_area = 0.05
+
+    # Set up reference
+    ref = Simulation(L=L)
+    ref.simulate()
+
+    ref_map = Mapper(ref.current,
+                     ref.voltage,
+                     electrode_area=electrode_area)
+
+    k_grid = generate_kgrid(r=3, m=4)
+
+    # Use angular coords z_l = exp((2 * pi * l) / L)
+    z_bdry = np.exp(1j*np.arange(0, 2 * math.pi, delta_theta))
+
+    # Get \vec{c} and \vec{d} for boundary points z_bdry
+    c_vec, d_vec = get_coef_vecs(current_mx=ref_map.j_mx,
+                                 k_grid=k_grid,
+                                 z=z_bdry)
+
+    end_offline = perf_counter()
+    print(f"Offline time: {end_offline - start_offline}")
+
+    """
+    Online phase
+    """
+    start_online = perf_counter()
+
+    anomaly = [PyEITAnomaly_Circle(center=[0.5, 0.], r=0.2, perm=1.5),
+               PyEITAnomaly_Circle(center=[-0.5, 0.], r=0.2, perm=0.5)]
+
+    body = Simulation(L=L, anomaly=anomaly)
+    body.simulate()
+
+    body_map = Mapper(body.current,
+                      body.voltage,
+                      electrode_area=electrode_area)
+
+    delta_DN = body_map.DN - ref_map.DN
+
+    k_grid.grid["texp"] = approx_scatter(k_grid,
+                                         pointwise_approx,
+                                         N=body_map.j_mx.shape[1],
+                                         delta_DN=delta_DN,
+                                         c_vec=c_vec,
+                                         d_vec=d_vec)
+
+    split_online = perf_counter()
+    print(f"Online split time: {split_online - start_online}")
+
+    n_px = 160
+    x = np.linspace(start=-1, stop=1, num=n_px)
+    y = np.linspace(start=-1, stop=1, num=n_px)
+    xx, yy = np.meshgrid(x, y)
+
+    domain = np.stack([xx.ravel(), yy.ravel()], axis=-1)
+    sigmas = solve_conductivity(domain, k_grid)
+
+    end_online = perf_counter()
+    print(f"Online time: {end_online - start_online}")
